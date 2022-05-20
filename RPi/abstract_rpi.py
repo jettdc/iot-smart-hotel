@@ -100,12 +100,12 @@ class AbstractRoomDevice:
 
     def get_telemetry_listeners(self):
         return [
-            self.presence_listener,
             self.temperature_listener,
             self.air_conditioner_listener,
             self.blind_listener,
             self.balcony_light_listener,
             self.interior_light_listener,
+            self.presence_listener,
         ]
 
     def mqtt_init(self):
@@ -239,7 +239,7 @@ class AbstractRoomDevice:
                             qos=1, retain=False)
 
         self.publish_lock.release()
-        # self.sensor_lock.release()
+
 
     """
     Pi Lifecycle Methods
@@ -254,7 +254,7 @@ class AbstractRoomDevice:
         pass
 
     @abc.abstractmethod
-    def destroy(self):
+    def destroy(self, signum, frame):
         pass
 
     """

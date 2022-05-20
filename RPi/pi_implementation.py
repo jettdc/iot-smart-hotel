@@ -1,10 +1,12 @@
+import random
+
 from abstract_rpi import AbstractRoomDevice
 from threading import Semaphore
 import RPi.GPIO as GPIO
-import Adafruit_DHT
 import signal
 import time
 import sys
+import math
 
 
 class RoomDevice(AbstractRoomDevice):
@@ -24,36 +26,74 @@ class RoomDevice(AbstractRoomDevice):
     SENSOR SETUP
     """
 
+    def button_release_callback(self, channel):
+        self.sensor_lock.acquire()
+        self.sensors["presence"]["detected"] = not self.sensors["presence"]["detected"]
+        self.sensor_lock.release()
+
     def setup_motor(self):
         GPIO.setup(self.MOTOR_INPUT_PIN, GPIO.OUT)
         GPIO.setup(self.MOTOR_INPUT_X_PIN, GPIO.OUT)
         GPIO.setup(self.MOTOR_INPUT_Y_PIN, GPIO.OUT)
+        GPIO.output(self.MOTOR_INPUT_PIN, GPIO.LOW)
 
-    def setup_servo(self):
+    def setup_blind(self):
         GPIO.setup(self.SERVO_INPUT_PIN, GPIO.OUT)
+        self.blind_pwm = GPIO.PWM(self.SERVO_INPUT_PIN, 100)
+        self.blind_pwm.start(7.5)
+        self.blind_pwm.ChangeDutyCycle(0)
+
 
     def setup_button(self):
-        GPIO.setmode(GPIO.BCM)  # GPIO.setmode(GPIO.BOARD)
         GPIO.setup(self.BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO.add_event_detect(self.BUTTON_PIN, GPIO.RISING,
+                              callback=lambda channel: self.button_release_callback(channel), bouncetime=100)
 
     def setup_interior_led(self):
         GPIO.setup(self.RED_LED_PIN, GPIO.OUT)
-        pwm = GPIO.PWM(12, 100)
+        self.int_pwm = GPIO.PWM(self.RED_LED_PIN, 100)
+        self.int_pwm.start(0)
 
     def setup_balcony_led(self):
         GPIO.setup(self.GREEN_LED_PIN, GPIO.OUT)
+        self.bal_pwm = GPIO.PWM(self.GREEN_LED_PIN, 100)
+        self.bal_pwm.start(0)
 
     """
     RPI LIFECYCLE METHODS
     """
 
     def device_setup(self):
-        GPIO.setwarnings(False)
+        GPIO.setwarnings(True)
+        GPIO.cleanup([
+            self.BUTTON_PIN,
+            self.RED_LED_PIN,
+            self.GREEN_LED_PIN,
+            self.MOTOR_INPUT_PIN,
+            self.MOTOR_INPUT_X_PIN,
+            self.MOTOR_INPUT_Y_PIN,
+            self.SERVO_INPUT_PIN,
+            self.DHT_INPUT_PIN, ])
         GPIO.setmode(GPIO.BCM)
+
+        self.setup_blind()
+        self.setup_motor()
+        self.setup_button()
+        self.setup_balcony_led()
+        self.setup_interior_led()
+
         signal.signal(signal.SIGINT, self.destroy)
 
-    def destroy(self):
-        GPIO.cleanup()
+    def destroy(self, signum, frame):
+        GPIO.cleanup([
+            self.BUTTON_PIN,
+            self.RED_LED_PIN,
+            self.GREEN_LED_PIN,
+            self.MOTOR_INPUT_PIN,
+            self.MOTOR_INPUT_X_PIN,
+            self.MOTOR_INPUT_Y_PIN,
+            self.SERVO_INPUT_PIN,
+            self.DHT_INPUT_PIN, ])
         sys.exit(0)
 
     """
@@ -67,37 +107,28 @@ class RoomDevice(AbstractRoomDevice):
         self.sensor_lock.release()
 
         # Initiate the button on the RPi
-        self.setup_button()
 
         while True:
-
-            # If button is pressed
-            if GPIO.input(self.BUTTON_PIN):
-                self.safe_print("Button Pressed / Presence detected")
-
-                self.sensor_lock.acquire()
-                self.sensors["presence"]["detected"] = not self.sensors["presence"]["detected"]
-                self.sensor_lock.release()
-
-                self.publish_presence()
-
+            self.publish_presence()
             time.sleep(2)
 
     def temperature_listener(self):
-
         self.sensor_lock.acquire()
-        self.sensors["temperature"]["active"] = True
+        self.sensors["air_conditioner"]["active"] = True
         self.sensor_lock.release()
 
         while True:
-            # Read and update temperature
+            # Simulate temperature changing
             self.sensor_lock.acquire()
-            self.sensors["temperature"]["temperature"] = Adafruit_DHT.read(Adafruit_DHT.DHT11, self.DHT_INPUT_PIN)[1]
+            self.sensors["temperature"] = {
+                "active": True,
+                "temperature": random.randint(0, 40)
+            }
             self.sensor_lock.release()
 
             self.publish_temperature()
 
-            time.sleep(3)
+            time.sleep(10)
 
     def air_conditioner_listener(self):
 
@@ -116,8 +147,6 @@ class RoomDevice(AbstractRoomDevice):
         self.sensors["blind"]["active"] = True
         self.sensor_lock.release()
 
-        self.setup_servo()
-
         while True:
             # Blind should only be changed by the upstream, so do nothing
             self.publish_blind()
@@ -128,8 +157,6 @@ class RoomDevice(AbstractRoomDevice):
         self.sensor_lock.acquire()
         self.sensors["balcony_light"]["active"] = True
         self.sensor_lock.release()
-
-        self.setup_balcony_led()
 
         while True:
             # Balcony light only changed by commands
@@ -167,15 +194,34 @@ class RoomDevice(AbstractRoomDevice):
         self.sensors["air_conditioner"]["mode"] = requested_mode
         if requested_mode == 0:  # OFF
             self.sensors["air_conditioner"]["level"] = 0
-        if requested_mode == 1:  # WARM
+            GPIO.output(self.MOTOR_INPUT_PIN, GPIO.LOW)
+            GPIO.output(self.MOTOR_INPUT_Y_PIN, GPIO.LOW)
+            GPIO.output(self.MOTOR_INPUT_X_PIN, GPIO.LOW)
+        elif requested_mode == 1:  # WARM
             self.sensors["air_conditioner"]["level"] = 50
+            print('back')
+            GPIO.output(self.MOTOR_INPUT_PIN, GPIO.HIGH)
+            GPIO.output(self.MOTOR_INPUT_Y_PIN, GPIO.HIGH)
+            GPIO.output(self.MOTOR_INPUT_X_PIN, GPIO.LOW)
         else:  # COLD
             self.sensors["air_conditioner"]["level"] = 100
+            GPIO.output(self.MOTOR_INPUT_PIN, GPIO.HIGH)
+            GPIO.output(self.MOTOR_INPUT_Y_PIN, GPIO.LOW)
+            GPIO.output(self.MOTOR_INPUT_X_PIN, GPIO.HIGH)
 
         self.sensor_lock.release()
 
-        pwm = GPIO.PWM(self.MOTOR_INPUT_PIN, 100)
-        pwm.start(self.sensors["air_conditioner"]["level"])
+        #pwm = GPIO.PWM(self.MOTOR_INPUT_PIN, 100)
+        #pwm.start(self.sensors["air_conditioner"]["level"])
+
+    def angleCalc(self, angle):
+        A = 0
+        B = 180
+        C = 5
+        D = 10
+        result = C*(1-((angle-A)/(B-A)))+D*((angle-A)/(B-A))
+        self.safe_print('angle calc:', result)
+        return math.floor(result)
 
     def handle_blind_command(self, requested_blind_level):
         self.safe_print("COMMAND RECEIVED: Setting blind to", requested_blind_level)
@@ -184,45 +230,88 @@ class RoomDevice(AbstractRoomDevice):
         self.sensors["blind"]["level"] = requested_blind_level
         self.sensor_lock.release()
 
-        pwm = GPIO.PWM(self.SERVO_INPUT_PIN, 100)
-        if requested_blind_level > 0:
-            pwm.start(requested_blind_level)
-        elif requested_blind_level < 0:
-            pwm.start(0)
+        # self.blind_pwm.start(7.5)
+
+        if requested_blind_level <= 0:
+            self.blind_pwm.ChangeDutyCycle(5)
+        elif requested_blind_level >= 180:
+            self.blind_pwm.ChangeDutyCycle(10)
         else:
-            pwm.start(180)
+            self.blind_pwm.ChangeDutyCycle(self.angleCalc(requested_blind_level))
+        time.sleep(1)
+        self.blind_pwm.ChangeDutyCycle(0)
+        #self.blind_pwm.stop()
 
     def handle_balcony_light_command(self, should_be_on, level):
         print("COMMAND RECEIVED: Turning balcony light", should_be_on, "and to level", level)
 
         self.sensor_lock.acquire()
         self.sensors["balcony_light"]["on"] = should_be_on
-        self.sensors["balcony_light"]["level"] = level
         self.sensor_lock.release()
 
-        pwm = GPIO.PWM(self.GREEN_LED_PIN, 100)
         if should_be_on and 0 < level <= 100:
-            pwm.start(level)
-        elif level > 100:
-            pwm.start(100)
+            self.bal_pwm.ChangeDutyCycle(0)
+            self.sensor_lock.acquire()
+            self.sensors["balcony_light"]["level"] = float(level)
+            self.sensor_lock.release()
+
+            for x in range(0, level):
+                self.bal_pwm.ChangeDutyCycle(x + 1)
+                time.sleep(0.01)
+
+        elif should_be_on and level > 100:
+            self.bal_pwm.ChangeDutyCycle(0)
+            self.sensor_lock.acquire()
+            self.sensors["balcony_light"]["level"] = 100.0
+            self.sensor_lock.release()
+
+            for x in range(0, 100):
+                self.bal_pwm.ChangeDutyCycle(x + 1)
+                time.sleep(0.01)
+
         else:
-            pwm.start(0)
+            self.bal_pwm.ChangeDutyCycle(0.0)
+            self.sensor_lock.acquire()
+
+            self.sensors["balcony_light"]["level"] = 0.0
+
+            self.sensor_lock.release()
+
 
     def handle_interior_light_command(self, should_be_on, level):
         print("COMMAND RECEIVED: Turning interior light", should_be_on, "and to level", level)
 
         self.sensor_lock.acquire()
         self.sensors["interior_light"]["on"] = should_be_on
-        self.sensors["interior_light"]["level"] = level
         self.sensor_lock.release()
 
-        pwm = GPIO.PWM(self.RED_LED_PIN, 100)
-        if should_be_on and 0 < level <= 180:
-            pwm.start(level)
-        elif level > 100:
-            pwm.start(100)
+        if should_be_on and 0 < level <= 100:
+            self.int_pwm.ChangeDutyCycle(0)
+            self.sensor_lock.acquire()
+            self.sensors["interior_light"]["level"] = float(level)
+            self.sensor_lock.release()
+
+            for x in range(0,level):
+                self.int_pwm.ChangeDutyCycle(x+1)
+                time.sleep(0.01)
+
+        elif should_be_on and level > 100:
+            self.int_pwm.ChangeDutyCycle(0)
+            self.sensor_lock.acquire()
+            self.sensors["interior_light"]["level"] = 100.0
+            self.sensor_lock.release()
+
+            for x in range(0,100):
+                self.int_pwm.ChangeDutyCycle(x+1)
+                time.sleep(0.01)
+
         else:
-            pwm.start(0)
+            self.int_pwm.ChangeDutyCycle(0.0)
+            self.sensor_lock.acquire()
+
+            self.sensors["interior_light"]["level"] = 0.0
+
+            self.sensor_lock.release()
 
 
 if __name__ == "__main__":
