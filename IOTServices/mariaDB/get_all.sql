@@ -1,0 +1,1 @@
+SELECT * FROM device_state ORDER BY date DESC LIMIT 100;

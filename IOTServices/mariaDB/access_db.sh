@@ -1,0 +1,1 @@
+docker exec -it iotservices-mariaDB-1 mysql -u root -pdso_db_root_password
