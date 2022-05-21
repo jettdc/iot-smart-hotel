@@ -1,17 +1,69 @@
 # Operating Systems Design Final IoT Solution
-#### Jett Crowson & Ben Weiler
+
+This project is a full IoT solution for running a 70 room smart hotel.
+
+## Features
+
+- Raspberry Pi program to read sensors and relay commands to actuators
+- Full simulator to simultaneously simulate the entire smart hotel (for lack of access to 70 raspberry pis)
+- Digital twins for each rpi/simulator
+- 2 MQTT message busses
+    - 1 used for `pi->digital twin` communication, 1 used for `message-router` communication
+- Message router to coordinate messages between the microservices
+- Data microservices
+    - Data Ingestion Microservice
+        - Store values from the devices (both sensor and actuator states) in a time series style
+    - Room Management Microservice
+        - Store room states and snapshots
+            - e.g. if a device connects, it will be marked as active and a snapshot of it's state is stored, and the
+              same happens when it disconnects (either when the pi disconnects orderly or through the transmission of
+              the last will by the MQTT broker).
+    - Both interact with the MariaDB database. Though they share the same db, they have separate schemas/tables
+- Frontend
+    - Visualization of data, ability to send commands to each room individually
+    - Ability to paint images on the facade of the hotel via coordination of various rooms' balcony lights
+- Backend
+    - API gateway for the frontend.
 
 ## Running
+
 - In GCP, start the `iot` and `twins` virtual machines and open ssh windows into both
 - In `iot`
-  - `$ cd session13`
-  - `$ bash scripts/start_iot_services.sh`
+    - `$ cd session13`
+    - `$ bash scripts/start_iot_services.sh`
 - In `twins`
-  - `$ cd session13`
-  - `$ bash scripts/start_digital_twins.sh` to start 4 digital twins, or
-  - `$ bash scripts/start_digital_twins_full.sh` to start 70 digital twins
+    - `$ cd session13`
+    - `$ bash scripts/start_digital_twins.sh` to start 4 digital twins, or
+    - `$ bash scripts/start_digital_twins_full.sh` to start 70 digital twins
+- Running the smart rooms
+    - Raspberry Pi
+        - Change the main function of `pi_implementation.py` to have your desired room number
+            - `simulator = RoomDevice("Room[Your room number]")`
+        - Install the required packages, including `python3 RPi.GPIO` if it's not already installed on the pi (it may
+          default to the python2 version)
+        - Run the file with sudo
+            - `sudo python3 pi_implementation.py`
+    - Simulators
+        - Make sure that you are running enough digital twins to accommodate your simulated rooms
+            - EX. If you are trying to run 70 rooms, you need to ensure that you've
+              run `$ bash scripts/start_digital_twins_full.sh` in the `twins` vm
+        - Change the global variable `NUM_DEVICES_TO_SIMULATE`
+        - Run the file
+            - `python3 pi_simulation.py`
+- UI
+    - Open the web interface, either by navigating to the public static ip of the `iot` vm, or by opening the local HTML
+      file found under `frontend/index.html`
+    - When devices connect, they should be un-grayed out
+    - Note: Specific room values only refresh when clicking on the room again, so if you request changes and you don't
+      see them reflected in the data, close the room you are inspecting, wait a few seconds, then click back in.
+
+## Screenshots
+![Hotel Overview + Facade](./facade.png)  
+![Room Info and Commands](./roominfo.png)  
+![Google Cloud Platform](./gcp.png)
 
 ## Project Structure
+
 ```
      .
      ├── DigitalTwin
@@ -74,10 +126,8 @@ IoT  │   ├── frontend
 
      ├── RPi
      │   ├── __init__.py
-     │   ├── __pycache__
-     │   │   └── abstract_rpi.cpython-310.pyc
 RPi  │   ├── abstract_rpi.py
-or   │   ├── abstract_rpi.pyc
+or   │   ├── math_helpers.py
 local│   ├── pi_implementation.py
      │   └── pi_simulation.py
 

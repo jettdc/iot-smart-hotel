@@ -29,7 +29,6 @@ class AbstractRoomDevice:
 
         self.sensors = {
             # Temperature sensor
-            # Set level of air conditioner, but NOT mode
             "temperature": {
                 "active": False,
                 "temperature": 0
@@ -40,9 +39,8 @@ class AbstractRoomDevice:
                 "active": False,
                 "detected": False
             },
-            # RGB  LED
             # DC MOTOR
-            # Mode will be based on upstream command only, NOT temp
+            # Mode will be based on upstream command only
             # Command
             # { "mode": 0 | 1 | 2 }
             "air_conditioner": {
@@ -51,14 +49,14 @@ class AbstractRoomDevice:
                 "level": 0,
             },
             # Servomotor
-            # Can receive orders
+            # Command
             # { "level": int }
             "blind": {
                 "active": False,
                 "level": 0  # 0 = open, 180 = closed
             },
             # Blue LED
-            # Can receive orders, moves gradually
+            # Command
             # { "on": bool, "level": int }
             "balcony_light": {
                 "active": False,
@@ -66,7 +64,7 @@ class AbstractRoomDevice:
                 "level": 0  # 0 = min, 100 = max
             },
             # White LED
-            # Same as above essentially
+            # Same as balcony light
             "interior_light": {
                 "active": False,
                 "on": False,
@@ -75,7 +73,6 @@ class AbstractRoomDevice:
         }
 
         self.is_connected = False
-
 
     def start(self):
         self.mqtt_init()
@@ -239,7 +236,6 @@ class AbstractRoomDevice:
                             qos=1, retain=False)
 
         self.publish_lock.release()
-
 
     """
     Pi Lifecycle Methods
