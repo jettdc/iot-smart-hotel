@@ -1,6 +1,6 @@
-# Operating Systems Design Final IoT Solution
+# Raspberry Pi IoT Smart Hotel
 
-This project is a full IoT solution for running a 70 room smart hotel.
+This project is a full IoT solution for running a 70 room smart hotel (well it would be a full solution if you were okay with having a raspberry pi with exposed wires sitting in your hotel room).
 
 ## Features
 
