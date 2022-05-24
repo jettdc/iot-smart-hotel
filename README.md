@@ -2,6 +2,8 @@
 
 This project is a full IoT solution for running a 70 room smart hotel (well it would be a full solution if you were okay with having a raspberry pi with exposed wires sitting in your hotel room).
 
+_Note: This project was my final submission for my IoT Design course at La Universidad Carlos III de Madrid_ 
+
 ## Features
 
 - Raspberry Pi program to read sensors and relay commands to actuators
